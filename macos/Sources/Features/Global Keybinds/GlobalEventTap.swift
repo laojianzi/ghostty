@@ -83,7 +83,7 @@ class GlobalEventTap {
         guard let eventTap = CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
                 place: .headInsertEventTap,
-                options: .defaultTap,
+                options: .listenOnly,
                 eventsOfInterest: eventMask,
                 callback: cgEventFlagsChangedHandler(proxy:type:cgEvent:userInfo:),
                 userInfo: nil
@@ -92,6 +92,7 @@ class GlobalEventTap {
             // Accessibility permissions but can probably be other reasons I don't
             // know about.
             Self.logger.debug("creating global event tap failed, missing permissions?")
+            Self.logger.info("accessibility trusted=\(AXIsProcessTrusted())")
             return false
         }
 
