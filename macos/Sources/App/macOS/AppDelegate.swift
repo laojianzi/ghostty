@@ -815,7 +815,19 @@ class AppDelegate: NSObject,
 
         // We need to handle our global event tap depending on if there are global
         // events that we care about in Ghostty.
-        if ghostty_app_has_global_keybinds(ghostty.app!) {
+        //
+        // We check both the Swift-side config (ghostty.config.keyboardShortcut) and
+        // the Zig-side function (ghostty_app_has_global_keybinds) because the Zig-side
+        // config clone may not correctly reflect the `global` flag on all macOS versions,
+        // while the Swift-side config is always accurate. The Zig side's keyEvent already
+        // correctly filters out non-global bindings when the app is not focused, so it is
+        // safe to enable the event tap even if only the Swift side reports a binding.
+        let hasGlobalToggle = ghostty.config.keyboardShortcut(for: "toggle_quick_terminal") != nil
+        let hasZigGlobal = ghostty_app_has_global_keybinds(ghostty.app!)
+        Self.logger.info(
+            "global keybinds check: swift=\(hasGlobalToggle) zig=\(hasZigGlobal)"
+        )
+        if hasGlobalToggle || hasZigGlobal {
             if timeSinceLaunch > 5 {
                 // If the process has been running for awhile we enable right away
                 // because no windows are likely to pop up.
