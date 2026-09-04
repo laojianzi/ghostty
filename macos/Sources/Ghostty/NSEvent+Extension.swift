@@ -33,12 +33,25 @@ extension NSEvent {
                 .subtracting([.control, .command]))
 
         // Our unshifted codepoint is the codepoint with no modifiers. We
-        // ignore multi-codepoint values. We have to use `byApplyingModifiers`
-        // instead of `charactersIgnoringModifiers` because the latter changes
-        // behavior with ctrl pressed and we don't want any of that.
+        // ignore multi-codepoint values. `characters(byApplyingModifiers:)`
+        // is safe for this on macOS 14 and newer. On macOS 12 and 13 it mutates
+        // internal NSEvent state, which can make a later interpretKeyEvents call
+        // discard the event (JDK-8320773). Avoid that API entirely on those systems.
         key_ev.unshifted_codepoint = 0
         if type == .keyDown || type == .keyUp {
-            if let chars = characters(byApplyingModifiers: []),
+            let chars: String?
+            if #available(macOS 14, *) {
+                chars = characters(byApplyingModifiers: [])
+            } else if modifierFlags.contains(.control) {
+                // `charactersIgnoringModifiers` still applies Control on older
+                // macOS releases, so use layout translation for Ctrl combinations.
+                chars = KeyboardLayout.characters(for: keyCode)
+                    ?? charactersIgnoringModifiers
+            } else {
+                chars = charactersIgnoringModifiers
+            }
+
+            if let chars,
                let codepoint = chars.unicodeScalars.first {
                 key_ev.unshifted_codepoint = codepoint.value
             }
@@ -61,7 +74,15 @@ extension NSEvent {
             // without control pressed. We do this because we handle control character
             // encoding directly within Ghostty's KeyEncoder.
             if scalar.value < 0x20 {
-                return self.characters(byApplyingModifiers: modifierFlags.subtracting(.control))
+                let translationMods = modifierFlags.subtracting(.control)
+                if #available(macOS 14, *) {
+                    return self.characters(byApplyingModifiers: translationMods)
+                }
+
+                return KeyboardLayout.characters(
+                    for: keyCode,
+                    modifiers: translationMods
+                ) ?? charactersIgnoringModifiers
             }
 
             // If we have a single value in the PUA, then it's a function key and
