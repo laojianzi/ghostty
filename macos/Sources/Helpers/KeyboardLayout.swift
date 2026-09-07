@@ -16,8 +16,8 @@ class KeyboardLayout {
     /// Translate a physical key through the current keyboard layout without
     /// asking AppKit to reinterpret an NSEvent.
     ///
-    /// Control and Command are intentionally ignored because they do not
-    /// contribute to text translation. Shift, Option, and Caps Lock are kept.
+    /// Control is intentionally ignored; Ghostty encodes control characters.
+    /// Command is preserved for layouts such as Dvorak-QWERTY Command.
     static func characters(
         for keyCode: UInt16,
         modifiers: NSEvent.ModifierFlags = []
@@ -37,6 +37,7 @@ class KeyboardLayout {
             .takeUnretainedValue() as Data
 
         var modifierState: UInt32 = 0
+        if modifiers.contains(.command) { modifierState |= UInt32(cmdKey >> 8) }
         if modifiers.contains(.shift) { modifierState |= UInt32(shiftKey >> 8) }
         if modifiers.contains(.option) { modifierState |= UInt32(optionKey >> 8) }
         if modifiers.contains(.capsLock) { modifierState |= UInt32(alphaLock >> 8) }
