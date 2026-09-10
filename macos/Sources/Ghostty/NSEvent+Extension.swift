@@ -23,22 +23,35 @@ extension NSEvent {
         key_ev.text = nil
         key_ev.composing = false
 
-        // macOS provides no easy way to determine the consumed modifiers for
-        // producing text. We apply a simple heuristic here that has worked for years
-        // so far: control and command never contribute to the translation of text,
-        // assume everything else did.
+        // macOS provides no easy way to determine consumed modifiers. Keep
+        // Control and Command effective for shortcut matching, even on layouts
+        // where Command changes the character mapping; assume the rest contributed
+        // to text translation.
         key_ev.mods = Ghostty.ghosttyMods(modifierFlags)
         key_ev.consumed_mods = Ghostty.ghosttyMods(
             (translationMods ?? modifierFlags)
                 .subtracting([.control, .command]))
 
         // Our unshifted codepoint is the codepoint with no modifiers. We
-        // ignore multi-codepoint values. We have to use `byApplyingModifiers`
-        // instead of `charactersIgnoringModifiers` because the latter changes
-        // behavior with ctrl pressed and we don't want any of that.
+        // ignore multi-codepoint values. `characters(byApplyingModifiers:)`
+        // is safe for this on macOS 14 and newer. On macOS 12 and 13 it mutates
+        // internal NSEvent state, which can make a later interpretKeyEvents call
+        // discard the event (JDK-8320773). Do not use it for this lookup on those systems.
         key_ev.unshifted_codepoint = 0
         if type == .keyDown || type == .keyUp {
-            if let chars = characters(byApplyingModifiers: []),
+            let chars: String?
+            if #available(macOS 14, *) {
+                chars = characters(byApplyingModifiers: [])
+            } else {
+                // charactersIgnoringModifiers still preserves Shift and can apply
+                // Control. Neither is valid for an unmodified key identity.
+                // Leave an unavailable translation unknown rather than guessing
+                // from shifted or control-modified event text.
+                chars = KeyboardLayout.characters(for: keyCode)
+            }
+
+            if let chars,
+               chars.unicodeScalars.count == 1,
                let codepoint = chars.unicodeScalars.first {
                 key_ev.unshifted_codepoint = codepoint.value
             }
@@ -50,7 +63,7 @@ extension NSEvent {
     /// Returns the text to set for a key event for Ghostty.
     ///
     /// This namely contains logic to avoid control characters, since we handle control character
-    /// mapping manually within Ghostty.
+    /// mapping manually within Ghostty's KeyEncoder.
     var ghosttyCharacters: String? {
         // If we have no characters associated with this event we do nothing.
         guard let characters else { return nil }
@@ -61,7 +74,15 @@ extension NSEvent {
             // without control pressed. We do this because we handle control character
             // encoding directly within Ghostty's KeyEncoder.
             if scalar.value < 0x20 {
-                return self.characters(byApplyingModifiers: modifierFlags.subtracting(.control))
+                let translationMods = modifierFlags.subtracting(.control)
+                if #available(macOS 14, *) {
+                    return self.characters(byApplyingModifiers: translationMods)
+                }
+
+                return KeyboardLayout.characters(
+                    for: keyCode,
+                    modifiers: translationMods
+                )
             }
 
             // If we have a single value in the PUA, then it's a function key and

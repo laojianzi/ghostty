@@ -1,0 +1,30 @@
+name: macOS keyboard compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'macos/Sources/Ghostty/NSEvent+Extension.swift'
+      - 'macos/Sources/Helpers/KeyboardLayout.swift'
+      - 'include/ghostty.h'
+      - 'test/macos-keyboard/**'
+      - '.github/workflows/macos-keyboard-compatibility.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-boundaries:
+    name: Native Swift boundaries (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Type-check and test native and legacy translation paths
+        run: bash test/macos-keyboard/native-check.sh
